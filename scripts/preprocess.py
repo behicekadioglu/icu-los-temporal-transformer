@@ -82,7 +82,7 @@ def run_preprocessing(raw_path, processed_path):
     np.save(os.path.join(processed_path, 'X_static.npy'), X_static_np)
     np.save(os.path.join(processed_path, 'X_baseline.npy'), X_baseline)
     np.save(os.path.join(processed_path, 'y.npy'), y)
-    print(f"Ön işleme tamamlandı! Özellik Sayısı: {len(feature_cols)}")
+    print(f"Preprocessing completed! Number of features: {len(feature_cols)}")
 
 
 if __name__ == "__main__":
