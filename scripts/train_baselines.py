@@ -38,7 +38,7 @@ def objective(trial, X_train, y_train, model_type):
     Optuna objective function to minimize Mean Absolute Error (MAE).
     """
     # Split training fold further into inner train/val for tuning (Nested CV approach)
-    x_t, x_v, y_t, y_v = train_test_split(X_train, y_train, test_test_size=0.2, random_state=SEED)
+    x_t, x_v, y_t, y_v = train_test_split(X_train, y_train, test_size=0.2, random_state=SEED)
 
     if model_type == 'xgboost':
         params = {
