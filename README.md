@@ -74,6 +74,21 @@ python scripts/train_baselines.py --model all --trials 20 --top_k 30
 
 ## Initial Results
 
+Our baseline models were evaluated using a 10-Fold Nested Cross-Validation strategy to ensure the generalizability of our findings. Hyperparameters were automatically tuned via Optuna to maintain a leakage-free and robust evaluation pipeline.
+
+### Optimized Performance Metrics
+The following table summarizes the performance of our optimized baseline models on the MIMIC-IV cohort:
+
+| Model | MAE (Days) | RMSE | R2 Score | MedAE | Status |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **XGBoost** | **2.40** | 3.57 | -0.73 | 1.50 | Optimized |
+| **Ridge** | 2.60 | 3.58 | -0.74 | 1.72 | Optimized |
+| **MLP** | 3.06 | 4.28 | -1.75 | 1.93 | Optimized |
+
+### Interpretation of Results
+* Best Performance: XGBoost is currently our strongest baseline, achieving the lowest error with an MAE of **2.40 days**. This suggests that gradient-boosted decision trees are better suited for capturing non-linear signals in flattened clinical data compared to the linear Ridge model or the feed-forward MLP.
+* Error Distribution: The discrepancy between MAE and MedAE (e.g., 2.40 vs 1.50 for XGBoost) points to the presence of clinical outliers—patients with exceptionally long ICU stays that significantly inflate the mean error.
+* Motivation for Transformer: The negative $R^2$ scores across all static models highlight the inherent difficulty of predicting ICU stay duration. This indicates that static baseline models struggle to outperform a mean-based prediction in terms of explained variance, likely due to the high volatility of patient health trajectories. This underscores the technical need for the next phase of the project: the Temporal Transformer, which is specifically designed to handle such complex temporal dependencies.
 
 
 
@@ -87,7 +102,5 @@ This project is designed to be fully reproducible. All scaling, feature selectio
 
 
 Author: Behice Kadıoğlu
-
 Instructor: Dr. Aytuğ Onan
-
-Institution: İzmir Institute of Technology (İYTE)
+Institution: İzmir Institute of Technology (IZTECH)
