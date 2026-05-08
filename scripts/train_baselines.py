@@ -159,6 +159,7 @@ if __name__ == "__main__":
     parser.add_argument('--model', type=str, default='all', choices=['xgboost', 'mlp', 'ridge', 'all'])
     parser.add_argument('--trials', type=int, default=20, help="Number of Optuna trials per model")
     parser.add_argument('--top_k', type=int, default=30)
-    
+    parser.add_argument('--data_path', type=str, default='data/processed/')
+
     args = parser.parse_args()
-    train_with_optuna('data/processed/', args.model, args.top_k, args.trials)
+    train_with_optuna(args.data_path, args.model, args.top_k, args.trials)
