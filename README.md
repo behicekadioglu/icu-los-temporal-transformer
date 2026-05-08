@@ -11,12 +11,19 @@ Predicting LoS is a critical task for hospital resource management and patient c
 ## Repository Structure
 
 icu-los-temporal-transformer/
-├── data/                   
+
+├── data/          
+
 │   ├── raw/                # Original MIMIC-IV CSV files
+
 │   └── processed/          # Processed 3D and 2D tensors (NumPy format)
+
 ├── scripts/                
+
 │   ├── preprocess.py       # Data cleaning, time-alignment, and imputation
+
 │   └── train_baselines.py  # Optimized baseline training loop with Optuna
+
 ├── results/                
 │   ├── baseline_results/   # Metric outputs in CSV format
 │   └── figures/            # Feature importance and performance plots
@@ -72,6 +79,10 @@ python scripts/train_baselines.py --model all --trials 20 --top_k 30
 ## Reproducibility
 This project is designed to be fully reproducible. All scaling, feature selection, and hyperparameter tuning are performed strictly within training folds to prevent data leakage. The requirements.txt file ensures environment consistency.
 
+
+
 Author: Behice Kadıoğlu
+
 Instructor: Dr. Aytuğ Onan
+
 Institution: İzmir Institute of Technology (İYTE)
