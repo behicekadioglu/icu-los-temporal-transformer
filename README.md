@@ -32,8 +32,10 @@ icu-los-temporal-transformer/
 
 1. Clone the Repository:
 
-'git clone https://github.com/behicekadioglu/icu-los-temporal-transformer.git'
-'cd icu-los-temporal-transformer'
+```
+{content: git clone https://github.com/behicekadioglu/icu-los-temporal-transformer.git
+cd icu-los-temporal-transformer}
+```
 
 2. Install Dependencies:
 
