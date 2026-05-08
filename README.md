@@ -10,27 +10,21 @@ Predicting LoS is a critical task for hospital resource management and patient c
 
 ## Repository Structure
 
+```text
 icu-los-temporal-transformer/
-
-├── data/          
-
-│   ├── raw/                # Original MIMIC-IV CSV files
-
-│   └── processed/          # Processed 3D and 2D tensors (NumPy format)
-
+├── data/                   
+│   ├── raw/                # Original MIMIC-IV CSV files (Excluded from Git)
+│   └── processed/          # Processed 3D and 2D tensors in NumPy format
 ├── scripts/                
-
 │   ├── preprocess.py       # Data cleaning, time-alignment, and imputation
-
 │   └── train_baselines.py  # Optimized baseline training loop with Optuna
-
 ├── results/                
-│   ├── baseline_results/   # Metric outputs in CSV format
-│   └── figures/            # Feature importance and performance plots
+│   ├── baseline_results/   # Metric outputs (MAE, RMSE, R2) in CSV format
+│   └── figures/            # Feature importance and performance visualizations
 ├── docs/                   
-│   └── progress_report.pdf # Project documentation
-├── requirements.txt        # Project dependencies
-├── .gitignore              # Files to be ignored by Git (e.g., raw data)
+│   └── progress_report.pdf # Project documentation and technical reports
+├── requirements.txt        # Project dependencies and library versions
+├── .gitignore              # Files to be ignored by Git (e.g., raw data, .npy files)
 └── README.md               # Project documentation and setup guide
 
 ## Installation & Setup
