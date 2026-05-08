@@ -32,16 +32,20 @@ icu-los-temporal-transformer/
 
 1. Clone the Repository:
 
-```python
+
+```bash
 git clone https://github.com/behicekadioglu/icu-los-temporal-transformer.git
 cd icu-los-temporal-transformer
 ```
+
 
 2. Install Dependencies:
 
 It is recommended to use a virtual environment.
 
-'pip install -r requirements.txt'
+```bash
+pip install -r requirements.txt
+```
 
 3. Data Preparation:
 Place the MIMIC-IV clinical database files in data/raw/. Ensure you have access to the dataset through PhysioNet.
@@ -51,14 +55,18 @@ Place the MIMIC-IV clinical database files in data/raw/. Ensure you have access 
 1. Data Preprocessing
 Run the following script to align clinical events into hourly bins and handle missing values:
 
-'python scripts/preprocess.py'
+```bash
+python scripts/preprocess.py
+```
 
 This will generate .npy files in the data/processed/ directory.  
 
 2. Baseline Training and Optimization
 Train the baseline models using Optuna for hyperparameter tuning. You can specify the model and number of trials:
 
-'python scripts/train_baselines.py --model all --trials 20 --top_k 30'
+```bash
+python scripts/train_baselines.py --model all --trials 20 --top_k 30
+```
 
 - --model: Choose from xgboost, mlp, ridge, or all.  
 - --trials: Number of optimization attempts per model.
