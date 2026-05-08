@@ -5,18 +5,54 @@ import time
 import xgboost as xgb
 import optuna
 import argparse
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.linear_model import Ridge
 from sklearn.neural_network import MLPRegressor
 from sklearn.model_selection import KFold, train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_absolute_error, median_absolute_error, r2_score, mean_squared_error
 
+# Set global seed for reproducibility
 SEED = 22
+
+def plot_xgboost_importance(model, feature_names, output_path='results/figures/'):
+    """
+    Generates and saves a feature importance plot for the XGBoost baseline.
+    Aggregates importance scores across the 24-hour window.
+    """
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+        print(f"Created directory: {output_path}")
+
+    importances = model.feature_importances_
+    num_unique_features = len(feature_names)
+    aggregated_importance = {}
+
+    for i, name in enumerate(feature_names):
+        # Aggregate importance of each feature across its 24 hourly steps
+        total_imp = sum(importances[i::num_unique_features])
+        aggregated_importance[name] = total_imp
+
+    # Take top 15 parameters for the plot
+    sorted_importance = sorted(aggregated_importance.items(), key=lambda x: x[1], reverse=True)[:15]
+    features, scores = zip(*sorted_importance)
+
+    plt.figure(figsize=(12, 8))
+    sns.barplot(x=list(scores), y=list(features), palette="viridis")
+    plt.title('Top 15 Clinical Parameters for LoS Prediction (Aggregated over 24h)')
+    plt.xlabel('Aggregated Feature Importance')
+    plt.ylabel('Clinical Parameter (Item ID)')
+    plt.tight_layout()
+
+    file_name = os.path.join(output_path, 'xgboost_feature_importance.png')
+    plt.savefig(file_name)
+    plt.close()
+    print(f"Feature importance plot saved to: {file_name}")
 
 def select_features_in_fold(X_train_flat, y_train, feature_names, top_k):
     """
-    Identifies the most important features using XGBoost within the training fold only.
-    Aggregates importance scores across all 24 time steps.
+    Identifies important features using XGBoost within the training fold only.
     """
     fs_model = xgb.XGBRegressor(n_estimators=50, random_state=SEED)
     fs_model.fit(X_train_flat, y_train)
@@ -26,7 +62,6 @@ def select_features_in_fold(X_train_flat, y_train, feature_names, top_k):
     item_importances = {}
     
     for i, name in enumerate(feature_names):
-        # sum importance of a single feature across its 24 hourly occurrences
         total_imp = sum(importances[i::num_features])
         item_importances[name] = total_imp
         
@@ -35,9 +70,9 @@ def select_features_in_fold(X_train_flat, y_train, feature_names, top_k):
 
 def objective(trial, X_train, y_train, model_type):
     """
-    Optuna objective function to minimize Mean Absolute Error (MAE).
+    Optuna objective function for nested hyperparameter tuning.
     """
-    # Split training fold further into inner train/val for tuning (Nested CV approach)
+    # Split training fold further into inner train/val for tuning
     x_t, x_v, y_t, y_v = train_test_split(X_train, y_train, test_size=0.2, random_state=SEED)
 
     if model_type == 'xgboost':
@@ -51,9 +86,7 @@ def objective(trial, X_train, y_train, model_type):
         model = xgb.XGBRegressor(**params)
         
     elif model_type == 'ridge':
-        params = {
-            'alpha': trial.suggest_float('alpha', 0.1, 10.0, log=True)
-        }
+        params = {'alpha': trial.suggest_float('alpha', 0.1, 10.0, log=True)}
         model = Ridge(**params)
         
     elif model_type == 'mlp':
@@ -71,15 +104,15 @@ def objective(trial, X_train, y_train, model_type):
     return mean_absolute_error(y_v, preds)
 
 def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
-    # Load the raw tensors prepared by preprocess.py
+    """
+    Main training loop with K-Fold, scaling, feature selection, and optimization.
+    """
     X_temp_raw = np.load(os.path.join(data_path, 'X_temporal_raw.npy'))
     X_static_raw = np.load(os.path.join(data_path, 'X_static_raw.npy'))
     y = np.load(os.path.join(data_path, 'y.npy'))
     f_names = np.load(os.path.join(data_path, 'feature_names.npy'))
     
     models_list = ['ridge', 'xgboost', 'mlp'] if selected_model == 'all' else [selected_model]
-    
-    # 10-Fold Cross Validation loop
     kf = KFold(n_splits=10, shuffle=True, random_state=SEED)
     final_summary = []
 
@@ -112,7 +145,7 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
             study = optuna.create_study(direction='minimize')
             study.optimize(lambda trial: objective(trial, X_tr_final, y[train_idx], m_type), n_trials=n_trials)
             
-            # 4. Train final model with best parameters
+            # 4. Final training with best parameters
             best_params = study.best_params
             if m_type == 'xgboost':
                 final_model = xgb.XGBRegressor(**best_params, random_state=SEED)
@@ -125,7 +158,7 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
             final_model.fit(X_tr_final, y[train_idx])
             t_time = time.time() - start_train
             
-            # 5. Inference
+            # 5. Inference and Metrics
             start_inf = time.time()
             preds = final_model.predict(X_val_final)
             inf_time = (time.time() - start_inf) / len(val_idx)
@@ -138,13 +171,16 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
                 'Train_Time': t_time,
                 'Inf_Time': inf_time
             })
-            print(f"Fold {fold+1} Optimized (MAE: {fold_metrics[-1]['MAE']:.4f})")
+            
+            # Plot importance for XGBoost in the first fold as a sample
+            if m_type == 'xgboost' and fold == 0:
+                plot_xgboost_importance(final_model, np.array(selected_items))
 
         avg_res = pd.DataFrame(fold_metrics).mean().to_dict()
         avg_res['Model'] = m_type
         final_summary.append(avg_res)
 
-    # Save results to the structured directory
+    # Save results to CSV
     output_folder = 'results/baseline_results'
     if not os.path.exists(output_folder): os.makedirs(output_folder)
     
@@ -157,9 +193,9 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='all', choices=['xgboost', 'mlp', 'ridge', 'all'])
-    parser.add_argument('--trials', type=int, default=20, help="Number of Optuna trials per model")
+    parser.add_argument('--trials', type=int, default=20)
     parser.add_argument('--top_k', type=int, default=30)
     parser.add_argument('--data_path', type=str, default='data/processed/')
-
+    
     args = parser.parse_args()
     train_with_optuna(args.data_path, args.model, args.top_k, args.trials)
