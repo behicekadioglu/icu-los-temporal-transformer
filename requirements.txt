@@ -1,14 +1,14 @@
-pandas==2.0.2
-numpy==1.24.3
-scipy==1.10.1
+numpy
+pandas
+scipy
 
-scikit-learn==1.2.2
-xgboost==1.7.5
+scikit-learn
+xgboost
 
-torch==2.0.1
-torchvision==0.15.2
-torchaudio==2.0.2
+optuna
 
-matplotlib==3.7.1
-seaborn==0.12.2
-tqdm==4.65.0
+matplotlib
+seaborn
+
+tqdm
+pyarrow
