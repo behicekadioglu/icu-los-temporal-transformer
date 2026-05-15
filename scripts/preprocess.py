@@ -2,10 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 
-
 SEED = 22
-
-
 
 def load_filtered_csv(path, id_col, target_ids, cols):
     """
@@ -13,23 +10,27 @@ def load_filtered_csv(path, id_col, target_ids, cols):
     based on the cohort's stay/admission IDs.
     """
     chunks = []
+
     for chunk in pd.read_csv(path, chunksize=1000000, usecols=cols):
         filtered = chunk[chunk[id_col].isin(target_ids)]
+
         if not filtered.empty:
             chunks.append(filtered)
+
     return pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame(columns=cols)
 
 
 
-
 def run_preprocessing(raw_path, processed_path):
-    print("Preprocessing started: Loading cohort data...")
+    print("Preprocessing started: ")
+    print("Loading cohort data...")
     
     # Cohort Extraction
     icustays = pd.read_csv(os.path.join(raw_path, 'icu/icustays.csv.gz'))[['subject_id', 'hadm_id', 'stay_id', 'intime', 'los']]
     patients = pd.read_csv(os.path.join(raw_path, 'hosp/patients.csv.gz'))[['subject_id', 'gender', 'anchor_age']]
 
     df_main = pd.merge(icustays, patients, on='subject_id', how='inner')
+
     df_main['intime'] = pd.to_datetime(df_main['intime'])
     
     target_stay_ids = set(df_main['stay_id'].unique())
@@ -38,6 +39,7 @@ def run_preprocessing(raw_path, processed_path):
 
     # Load Clinical Events
     print("Loading clinical events...")
+
     df_all_charts = load_filtered_csv(os.path.join(raw_path, 'icu/chartevents.csv.gz'), 
                                       'stay_id', target_stay_ids, ['stay_id', 'charttime', 'itemid', 'valuenum'])
     
@@ -65,6 +67,7 @@ def run_preprocessing(raw_path, processed_path):
 
     # Pivoting and Imputation
     print("Pivoting data and handling missing values...")
+    
     df_pivot = df_24h.pivot_table(index=['stay_id', 'hour'], columns='itemid', values='valuenum', aggfunc='mean')
     
     # Ensure every patient has all 24 hours represented
@@ -87,13 +90,16 @@ def run_preprocessing(raw_path, processed_path):
 
 
     # Save Processed Data and Feature Names
-    if not os.path.exists(processed_path): os.makedirs(processed_path)
+    if not os.path.exists(processed_path): 
+        os.makedirs(processed_path)
+    
     np.save(os.path.join(processed_path, 'X_temporal_raw.npy'), X_temporal_raw)
     np.save(os.path.join(processed_path, 'X_static_raw.npy'), X_static_raw)
     np.save(os.path.join(processed_path, 'y.npy'), y)
     np.save(os.path.join(processed_path, 'feature_names.npy'), np.array(feature_cols))
     
     print(f"Preprocessing completed! Saved {len(feature_cols)} raw temporal features.")
+
 
 
 if __name__ == "__main__":

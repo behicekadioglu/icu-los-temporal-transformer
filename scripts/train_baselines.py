@@ -13,7 +13,6 @@ from sklearn.model_selection import KFold, train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_absolute_error, median_absolute_error, r2_score, mean_squared_error
 
-# Set global seed for reproducibility
 SEED = 22
 
 def plot_xgboost_importance(model, feature_names, output_path='results/figures/'):
@@ -23,7 +22,6 @@ def plot_xgboost_importance(model, feature_names, output_path='results/figures/'
     """
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-        print(f"Created directory: {output_path}")
 
     importances = model.feature_importances_
     num_unique_features = len(feature_names)
@@ -34,7 +32,7 @@ def plot_xgboost_importance(model, feature_names, output_path='results/figures/'
         total_imp = sum(importances[i::num_unique_features])
         aggregated_importance[name] = total_imp
 
-    # Take top 15 parameters for the plot
+    # Take top 15 parameters for the plot (we look parameters for the first fold only in this code)
     sorted_importance = sorted(aggregated_importance.items(), key=lambda x: x[1], reverse=True)[:15]
     features, scores = zip(*sorted_importance)
 
@@ -49,6 +47,8 @@ def plot_xgboost_importance(model, feature_names, output_path='results/figures/'
     plt.savefig(file_name)
     plt.close()
     print(f"Feature importance plot saved to: {file_name}")
+
+
 
 def select_features_in_fold(X_train_flat, y_train, feature_names, top_k):
     """
@@ -68,10 +68,13 @@ def select_features_in_fold(X_train_flat, y_train, feature_names, top_k):
     sorted_items = sorted(item_importances.items(), key=lambda x: x[1], reverse=True)
     return [item[0] for item in sorted_items[:top_k]]
 
+
+
 def objective(trial, X_train, y_train, model_type):
     """
     Optuna objective function for nested hyperparameter tuning.
     """
+
     # Split training fold further into inner train/val for tuning
     x_t, x_v, y_t, y_v = train_test_split(X_train, y_train, test_size=0.2, random_state=SEED)
 
@@ -103,6 +106,8 @@ def objective(trial, X_train, y_train, model_type):
     preds = model.predict(x_v)
     return mean_absolute_error(y_v, preds)
 
+
+
 def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
     """
     Main training loop with K-Fold, scaling, feature selection, and optimization.
@@ -121,7 +126,7 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
         fold_metrics = []
         
         for fold, (train_idx, val_idx) in enumerate(kf.split(X_temp_raw)):
-            # 1. Leakage-Free Scaling
+            # Scaling
             scaler = MinMaxScaler()
             N_tr, T, F = X_temp_raw[train_idx].shape
             X_tr_scaled = scaler.fit_transform(X_temp_raw[train_idx].reshape(-1, F)).reshape(N_tr, T, F)
@@ -129,7 +134,8 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
             N_val = len(val_idx)
             X_val_scaled = scaler.transform(X_temp_raw[val_idx].reshape(-1, F)).reshape(N_val, T, F)
             
-            # 2. Leakage-Free Feature Selection
+
+            # Feature Selection
             X_tr_flat = X_tr_scaled.reshape(N_tr, -1)
             selected_items = select_features_in_fold(X_tr_flat, y[train_idx], f_names, top_k)
             
@@ -137,15 +143,17 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
             X_tr_final = X_tr_scaled[:, :, sel_idx].reshape(N_tr, -1)
             X_val_final = X_val_scaled[:, :, sel_idx].reshape(N_val, -1)
             
-            # Add static demographics
+            # Adding static demographics
             X_tr_final = np.hstack([X_tr_final, X_static_raw[train_idx]])
             X_val_final = np.hstack([X_val_final, X_static_raw[val_idx]])
             
-            # 3. Optuna Hyperparameter Optimization
+
+            # Optuna Hyperparameter Optimization
             study = optuna.create_study(direction='minimize')
             study.optimize(lambda trial: objective(trial, X_tr_final, y[train_idx], m_type), n_trials=n_trials)
             
-            # 4. Final training with best parameters
+
+            # Final training with best parameters
             best_params = study.best_params
             if m_type == 'xgboost':
                 final_model = xgb.XGBRegressor(**best_params, random_state=SEED)
@@ -158,7 +166,8 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
             final_model.fit(X_tr_final, y[train_idx])
             t_time = time.time() - start_train
             
-            # 5. Inference and Metrics
+
+            # Inference and Metrics
             start_inf = time.time()
             preds = final_model.predict(X_val_final)
             inf_time = (time.time() - start_inf) / len(val_idx)
@@ -180,6 +189,7 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
         avg_res['Model'] = m_type
         final_summary.append(avg_res)
 
+
     # Save results to CSV
     output_folder = 'results/baseline_results'
     if not os.path.exists(output_folder): os.makedirs(output_folder)
@@ -189,6 +199,8 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
     
     print("\n" + "="*60 + "\nFINAL OPTIMIZED RESULTS\n" + "="*60)
     print(df_results[['Model', 'MAE', 'RMSE', 'R2', 'MedAE']].to_string(index=False))
+
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
