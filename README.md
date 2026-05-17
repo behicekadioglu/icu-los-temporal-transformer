@@ -111,16 +111,18 @@ python scripts/visualize_results.py
 Our models are evaluated using a 10-Fold Nested Cross-Validation strategy to ensure the generalizability of our findings. Hyperparameters are automatically tuned via Optuna to maintain a leakage-free and robust evaluation pipeline.
 
 
-### Baseline Performance Overview
-The following table summarizes the initial performance of our optimized baseline models on the MIMIC-IV cohort:
+### Performance Overview
+The following table summarizes the actual cross-validated performance of all optimized baseline and deep learning models on the MIMIC-IV cohort:
 
-| Model | MAE (Days) | RMSE | R2 Score | MedAE | Status |
+| Model | MAE (Days) | RMSE | R2 Score | MedAE | Type |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **XGBoost** | **2.40** | 3.57 | -0.73 | 1.50 | Optimized |
-| **Ridge** | 2.60 | 3.58 | -0.74 | 1.72 | Optimized |
-| **MLP** | 3.06 | 4.28 | -1.75 | 1.93 | Optimized |
+| **Transformer (Temporal Only)** | **2.18** | 3.54 | 0.00 | **1.07** | Deep Learning Ablation |
+| **MLP** | 2.19 | **3.17** | **0.06** | 1.25 | Baseline |
+| **XGBoost** | 2.28 | 3.13 | -0.06 | 1.59 | Baseline |
+| **Transformer (Main/Fusion)** | 2.40 | 3.74 | -0.44 | 1.30 | Deep Learning |
+| **Transformer (Static Only)** | 2.55 | 3.96 | -0.24 | 1.44 | Deep Learning Ablation |
+| **Ridge** | 3.17 | 6.17 | -3.72 | 1.65 | Baseline |
 
-(Note: Transformer and Ablation metrics are dynamically saved to results/transformer_results/ after running the respective scripts).
 
 
 
