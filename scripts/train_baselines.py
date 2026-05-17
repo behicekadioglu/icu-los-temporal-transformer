@@ -5,8 +5,6 @@ import time
 import xgboost as xgb
 import optuna
 import argparse
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.linear_model import Ridge
 from sklearn.neural_network import MLPRegressor
 from sklearn.model_selection import KFold, train_test_split
@@ -15,67 +13,10 @@ from sklearn.metrics import mean_absolute_error, median_absolute_error, r2_score
 
 SEED = 22
 
-def plot_xgboost_importance(model, feature_names, output_path='results/figures/'):
-    """
-    Generates and saves a feature importance plot for the XGBoost baseline.
-    Aggregates importance scores across the 24-hour window.
-    """
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
-
-    importances = model.feature_importances_
-    num_unique_features = len(feature_names)
-    aggregated_importance = {}
-
-    for i, name in enumerate(feature_names):
-        # Aggregate importance of each feature across its 24 hourly steps
-        total_imp = sum(importances[i::num_unique_features])
-        aggregated_importance[name] = total_imp
-
-    # Take top 15 parameters for the plot (we look parameters for the first fold only in this code)
-    sorted_importance = sorted(aggregated_importance.items(), key=lambda x: x[1], reverse=True)[:15]
-    features, scores = zip(*sorted_importance)
-
-    plt.figure(figsize=(12, 8))
-    sns.barplot(x=list(scores), y=list(features), palette="viridis")
-    plt.title('Top 15 Clinical Parameters for LoS Prediction (Aggregated over 24h)')
-    plt.xlabel('Aggregated Feature Importance')
-    plt.ylabel('Clinical Parameter (Item ID)')
-    plt.tight_layout()
-
-    file_name = os.path.join(output_path, 'xgboost_feature_importance.png')
-    plt.savefig(file_name)
-    plt.close()
-    print(f"Feature importance plot saved to: {file_name}")
-
-
-
-def select_features_in_fold(X_train_flat, y_train, feature_names, top_k):
-    """
-    Identifies important features using XGBoost within the training fold only.
-    """
-    fs_model = xgb.XGBRegressor(n_estimators=50, random_state=SEED)
-    fs_model.fit(X_train_flat, y_train)
-    
-    importances = fs_model.feature_importances_
-    num_features = len(feature_names)
-    item_importances = {}
-    
-    for i, name in enumerate(feature_names):
-        total_imp = sum(importances[i::num_features])
-        item_importances[name] = total_imp
-        
-    sorted_items = sorted(item_importances.items(), key=lambda x: x[1], reverse=True)
-    return [item[0] for item in sorted_items[:top_k]]
-
-
-
 def objective(trial, X_train, y_train, model_type):
     """
     Optuna objective function for nested hyperparameter tuning.
     """
-
-    # Split training fold further into inner train/val for tuning
     x_t, x_v, y_t, y_v = train_test_split(X_train, y_train, test_size=0.2, random_state=SEED)
 
     if model_type == 'xgboost':
@@ -93,8 +34,17 @@ def objective(trial, X_train, y_train, model_type):
         model = Ridge(**params)
         
     elif model_type == 'mlp':
+        layer_choice = trial.suggest_categorical('layer_size', ['small', 'medium', 'large'])
+        
+        if layer_choice == 'small':
+            hidden_sizes = (64,)
+        elif layer_choice == 'medium':
+            hidden_sizes = (128, 64)
+        else:
+            hidden_sizes = (256, 128, 64)
+            
         params = {
-            'hidden_layer_sizes': trial.suggest_categorical('hidden_layer_sizes', [(64,), (128, 64), (256, 128, 64)]),
+            'hidden_layer_sizes': hidden_sizes,
             'alpha': trial.suggest_float('alpha', 0.0001, 0.1, log=True),
             'learning_rate_init': trial.suggest_float('learning_rate_init', 0.001, 0.01, log=True),
             'max_iter': 500,
@@ -107,15 +57,14 @@ def objective(trial, X_train, y_train, model_type):
     return mean_absolute_error(y_v, preds)
 
 
-
-def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
+def train_with_optuna(data_path, selected_model, n_trials=20):
     """
-    Main training loop with K-Fold, scaling, feature selection, and optimization.
+    Main training loop with K-Fold, scaling, and optimization.
     """
-    X_temp_raw = np.load(os.path.join(data_path, 'X_temporal_raw.npy'))
+    # Veriler preprocess aşamasından filtrelenmiş (15 özellik) olarak geliyor
+    X_temp_sel = np.load(os.path.join(data_path, 'X_temporal_selected.npy'))
     X_static_raw = np.load(os.path.join(data_path, 'X_static_raw.npy'))
     y = np.load(os.path.join(data_path, 'y.npy'))
-    f_names = np.load(os.path.join(data_path, 'feature_names.npy'))
     
     models_list = ['ridge', 'xgboost', 'mlp'] if selected_model == 'all' else [selected_model]
     kf = KFold(n_splits=10, shuffle=True, random_state=SEED)
@@ -125,48 +74,50 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
         print(f"\n--- Starting Optimization for Model: {m_type.upper()} ---")
         fold_metrics = []
         
-        for fold, (train_idx, val_idx) in enumerate(kf.split(X_temp_raw)):
+        for fold, (train_idx, val_idx) in enumerate(kf.split(X_temp_sel)):
             # Scaling
             scaler = MinMaxScaler()
-            N_tr, T, F = X_temp_raw[train_idx].shape
-            X_tr_scaled = scaler.fit_transform(X_temp_raw[train_idx].reshape(-1, F)).reshape(N_tr, T, F)
+            N_tr, T, F = X_temp_sel[train_idx].shape
+            
+            X_tr_scaled = scaler.fit_transform(X_temp_sel[train_idx].reshape(-1, F)).reshape(N_tr, T, F)
+            X_tr_flat = X_tr_scaled.reshape(N_tr, -1)
             
             N_val = len(val_idx)
-            X_val_scaled = scaler.transform(X_temp_raw[val_idx].reshape(-1, F)).reshape(N_val, T, F)
+            X_val_scaled = scaler.transform(X_temp_sel[val_idx].reshape(-1, F)).reshape(N_val, T, F)
+            X_val_flat = X_val_scaled.reshape(N_val, -1)
             
-
-            # Feature Selection
-            X_tr_flat = X_tr_scaled.reshape(N_tr, -1)
-            selected_items = select_features_in_fold(X_tr_flat, y[train_idx], f_names, top_k)
+            # Add static features
+            X_tr_final = np.hstack([X_tr_flat, X_static_raw[train_idx]])
+            X_val_final = np.hstack([X_val_flat, X_static_raw[val_idx]])
             
-            sel_idx = [i for i, name in enumerate(f_names) if name in selected_items]
-            X_tr_final = X_tr_scaled[:, :, sel_idx].reshape(N_tr, -1)
-            X_val_final = X_val_scaled[:, :, sel_idx].reshape(N_val, -1)
-            
-            # Adding static demographics
-            X_tr_final = np.hstack([X_tr_final, X_static_raw[train_idx]])
-            X_val_final = np.hstack([X_val_final, X_static_raw[val_idx]])
-            
-
             # Optuna Hyperparameter Optimization
             study = optuna.create_study(direction='minimize')
             study.optimize(lambda trial: objective(trial, X_tr_final, y[train_idx], m_type), n_trials=n_trials)
             
-
             # Final training with best parameters
-            best_params = study.best_params
+            best_params = study.best_params.copy()
+
             if m_type == 'xgboost':
                 final_model = xgb.XGBRegressor(**best_params, random_state=SEED)
             elif m_type == 'ridge':
                 final_model = Ridge(**best_params)
             elif m_type == 'mlp':
+                layer_choice = best_params.pop('layer_size') 
+                
+                if layer_choice == 'small':
+                    hidden_sizes = (64,)
+                elif layer_choice == 'medium':
+                    hidden_sizes = (128, 64)
+                else:
+                    hidden_sizes = (256, 128, 64)
+                
+                best_params['hidden_layer_sizes'] = hidden_sizes
                 final_model = MLPRegressor(**best_params, random_state=SEED)
 
             start_train = time.time()
             final_model.fit(X_tr_final, y[train_idx])
             t_time = time.time() - start_train
             
-
             # Inference and Metrics
             start_inf = time.time()
             preds = final_model.predict(X_val_final)
@@ -180,15 +131,10 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
                 'Train_Time': t_time,
                 'Inf_Time': inf_time
             })
-            
-            # Plot importance for XGBoost in the first fold as a sample
-            if m_type == 'xgboost' and fold == 0:
-                plot_xgboost_importance(final_model, np.array(selected_items))
 
         avg_res = pd.DataFrame(fold_metrics).mean().to_dict()
         avg_res['Model'] = m_type
         final_summary.append(avg_res)
-
 
     # Save results to CSV
     output_folder = 'results/baseline_results'
@@ -200,14 +146,11 @@ def train_with_optuna(data_path, selected_model, top_k=30, n_trials=20):
     print("\n" + "="*60 + "\nFINAL OPTIMIZED RESULTS\n" + "="*60)
     print(df_results[['Model', 'MAE', 'RMSE', 'R2', 'MedAE']].to_string(index=False))
 
-    
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='all', choices=['xgboost', 'mlp', 'ridge', 'all'])
     parser.add_argument('--trials', type=int, default=20)
-    parser.add_argument('--top_k', type=int, default=30)
     parser.add_argument('--data_path', type=str, default='data/processed/')
     
     args = parser.parse_args()
-    train_with_optuna(args.data_path, args.model, args.top_k, args.trials)
+    train_with_optuna(args.data_path, args.model, args.trials)

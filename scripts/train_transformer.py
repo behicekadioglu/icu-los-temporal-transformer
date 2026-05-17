@@ -12,7 +12,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, m
 SEED = 22
 torch.manual_seed(SEED)
 
-
+optuna.logging.set_verbosity(optuna.logging.INFO)
 
 class MIMICDataset(Dataset):
     def __init__(self, X_t, X_s, y):
@@ -27,7 +27,6 @@ class MIMICDataset(Dataset):
         return self.X_t[idx], self.X_s[idx], self.y[idx]
 
 
-
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=24):
         super().__init__()
@@ -39,7 +38,6 @@ class PositionalEncoding(nn.Module):
     
     def forward(self, x): 
         return x + self.pe[:, :x.size(1)]
-
 
 
 class TemporalTransformer(nn.Module):
@@ -56,7 +54,6 @@ class TemporalTransformer(nn.Module):
         x = self.pos_encoder(self.input_projection(xt))
         x = self.transformer_encoder(x).mean(dim=1)
         return self.regression_head(torch.cat([x, xs], dim=1)).squeeze(-1)
-
 
 
 def evaluate_metrics(model, loader, device):
@@ -78,15 +75,15 @@ def evaluate_metrics(model, loader, device):
             'Inf_Time': inf_time}
 
 
-
 def objective(trial, X_t, X_s, y, device):
+    print(f"\n>>> Optuna Trial {trial.number} Başladı...")
     m_p = {'d_model': trial.suggest_categorical('d_model', [64, 128]), 'nhead': trial.suggest_categorical('nhead', [4, 8]), 
            'num_layers': trial.suggest_int('num_layers', 1, 3), 'dropout': trial.suggest_float('dropout', 0.1, 0.3)}
     lr = trial.suggest_float('lr', 1e-4, 5e-3, log=True)
     kf = KFold(n_splits=10, shuffle=True, random_state=SEED)
     maes = []
 
-    for tr_idx, val_idx in kf.split(X_t):
+    for fold, (tr_idx, val_idx) in enumerate(kf.split(X_t)):
         scaler = MinMaxScaler()
         N, T, F = X_t[tr_idx].shape
         xt_tr = scaler.fit_transform(X_t[tr_idx].reshape(-1, F)).reshape(N, T, F)
@@ -103,26 +100,38 @@ def objective(trial, X_t, X_s, y, device):
                 optimizer.zero_grad(); nn.HuberLoss()(model(xt.to(device), xs.to(device)), 
                                                       target.to(device)).backward(); optimizer.step()
     
-        maes.append(evaluate_metrics(model, val_l, device)['MAE'])
+        fold_mae = evaluate_metrics(model, val_l, device)['MAE']
+        maes.append(fold_mae)
 
-    return np.mean(maes)
-
+    mean_mae = np.mean(maes)
+    print(f">>> Trial {trial.number} Bitti. Ortalama MAE: {mean_mae:.4f}")
+    return mean_mae
 
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    X_t = np.load('data/processed/X_temporal_raw.npy') 
+    print(f"Using device: {device}")
+    
+    X_t = np.load('data/processed/X_temporal_selected.npy') 
     X_s = np.load('data/processed/X_static_raw.npy')
     y = np.load('data/processed/y.npy')
 
+    print("Hyperparameter optimization starting with Optuna...")
     study = optuna.create_study(direction='minimize')
     study.optimize(lambda t: objective(t, X_t, X_s, y, device), n_trials=10)
+    
+    print("\n" + "="*40)
+    print("OPTUNA OPTIMIZATION COMPLETED!")
+    print(f"Best Trial Params: {study.best_params}")
+    print("="*40 + "\n")
     
     best_p = study.best_params.copy(); lr = best_p.pop('lr')
     kf = KFold(n_splits=10, shuffle=True, random_state=SEED)
     results, best_mae = [], float('inf')
     
+    print("Starting final training with the best parameters...")
     for fold, (tr_idx, val_idx) in enumerate(kf.split(X_t)):
+        print(f"--- Final Training: Fold {fold+1}/10 ---")
         scaler = MinMaxScaler()
         N, T, F = X_t[tr_idx].shape
 
@@ -151,10 +160,21 @@ if __name__ == "__main__":
             best_mae = m['MAE']
             os.makedirs('results/models', exist_ok=True)
             torch.save(model.state_dict(), 'results/models/best_transformer_main.pth')
-            with open('results/models/model_config.json', 'w') as f: json.dump({'params': best_p, 'input_dim': F, 
-                                                                                'static_dim': X_s.shape[1]}, f)
+            with open('results/models/model_config.json', 'w') as f: 
+                json.dump({'params': best_p, 'input_dim': F, 'static_dim': X_s.shape[1]}, f)
+            print(f"--> New best model saved (MAE: {best_mae:.4f})")
     
 
+    output_folder = 'results/transformer_results'
+    os.makedirs(output_folder, exist_ok=True)
+    
+    df_results = pd.DataFrame(results)
+
+    df_results.to_csv(os.path.join(output_folder, 'transformer_main_fold_metrics.csv'), index=False)
+    
+    df_avg = df_results.mean().to_frame().T
+    df_avg.to_csv(os.path.join(output_folder, 'transformer_main_average_metrics.csv'), index=False)
     
     print("\n" + "="*30 + "\nFINAL TRANSFORMER RESULTS\n" + "="*30)
-    print(pd.DataFrame(results).mean())
+    print(df_results.mean())
+    print(f"\nMetrics successfully saved to '{output_folder}/' directory.")

@@ -4,11 +4,9 @@ scipy
 
 scikit-learn
 xgboost
+torch
 
 optuna
 
 matplotlib
 seaborn
-
-tqdm
-pyarrow
